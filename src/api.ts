@@ -1,4 +1,4 @@
-import { upload } from "@vercel/blob/client";
+import { uploadPresigned } from "@vercel/blob/client";
 import type { Editor, Sheet } from "../api/_lib/types";
 import type { Identity } from "./identity";
 
@@ -68,7 +68,7 @@ export async function uploadPdf(id: Identity, bytes: Uint8Array | File, label: s
   }
   const slug = label.replace(/[^\w-]+/g, "-").slice(0, 40) || "sheet";
   const blob = bytes instanceof File ? bytes : new Blob([bytes as BlobPart], { type: "application/pdf" });
-  const result = await upload(`sheets/${slug}.pdf`, blob, {
+  const result = await uploadPresigned(`files/${slug}.pdf`, blob, {
     access: "public",
     handleUploadUrl: "/api/upload",
     clientPayload: JSON.stringify({ roomId: id.roomId, playerId: id.playerId }),

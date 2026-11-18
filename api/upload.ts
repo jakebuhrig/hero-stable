@@ -1,25 +1,30 @@
-import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { issueSignedToken } from "@vercel/blob";
+import { handleUploadPresigned, type HandleUploadPresignedBody } from "@vercel/blob/client";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 
-/** Issues short-lived tokens so browsers upload PDFs straight to Vercel Blob. */
+/**
+ * Lets browsers upload PDFs straight to Vercel Blob (past Vercel's 4.5 MB request limit).
+ * Uses presigned URLs, which work with the store's own credentials (BLOB_STORE_ID + OIDC), so
+ * no BLOB_READ_WRITE_TOKEN is needed.
+ */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
-    const json = await handleUpload({
-      body: req.body as HandleUploadBody,
+    const json = await handleUploadPresigned({
+      body: req.body as HandleUploadPresignedBody,
       request: req,
-      onBeforeGenerateToken: async (_pathname, clientPayload) => {
+      getSignedToken: async (pathname, clientPayload) => {
         const who = JSON.parse(clientPayload ?? "{}") as { roomId?: string; playerId?: string };
         if (!who.roomId || !who.playerId) throw new Error("Missing player identity");
-        return {
+        const token = await issueSignedToken({
+          pathname,
+          operations: ["put"],
           allowedContentTypes: ["application/pdf"],
           maximumSizeInBytes: MAX_BYTES,
-          addRandomSuffix: true,
-        };
+        });
+        return { token, urlOptions: { addRandomSuffix: true } };
       },
-      // The client registers the file with /api/sheets after the upload, so nothing to do here.
-      onUploadCompleted: async () => {},
     });
     res.status(200).json(json);
   } catch (err) {
