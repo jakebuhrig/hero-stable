@@ -12,7 +12,6 @@
   },
   "dependencies": {
     "@owlbear-rodeo/sdk": "^3.1.0",
-    "@upstash/redis": "^1.35.0",
     "@vercel/blob": "^2.0.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.5.438",

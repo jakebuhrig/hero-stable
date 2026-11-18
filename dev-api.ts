@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "
 import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 import type { Plugin } from "vite";
-import { createHandlers, type Store } from "./api/_lib/handlers";
+import { ConflictError, createHandlers, type Store } from "./api/_lib/handlers";
 import type { ApiReq, Sheet } from "./api/_lib/types";
 
 /**
@@ -27,11 +27,14 @@ export function localApi(): Plugin {
     async listSheets(roomId) {
       return Object.values(load()).filter((s) => s.roomId === roomId);
     },
-    async getSheet(id) {
-      return load()[id] ?? null;
+    async getSheet(roomId, id) {
+      const sheet = load()[id];
+      return sheet && sheet.roomId === roomId ? sheet : null;
     },
     async putSheet(sheet) {
       const db = load();
+      // Same rule as the Blob store: a version can only be written once.
+      if (db[sheet.id] && db[sheet.id].version >= sheet.version) throw new ConflictError("version exists");
       db[sheet.id] = sheet;
       save(db);
     },

@@ -6,6 +6,7 @@ import { fetchPdfBytes, sheetsApi, uploadPdf } from "./api";
 import { inObr, useIdentity, useOwlbearTheme, type Identity } from "./identity";
 import { Dropzone, hasFiles, isPdf } from "./Dropzone";
 import { carryOver, listFieldNames, type CarryOverResult } from "./pdfFields";
+import { notifyChanged, onChanged } from "./sync";
 import { getHostMode, openSheet, setHostMode, type HostMode } from "./windows";
 
 type Dialog =
@@ -17,7 +18,8 @@ type Dialog =
   | { kind: "undo"; sheet: Sheet }
   | { kind: "settings" };
 
-const REFRESH_MS = 10000;
+const REFRESH_MS = 60000;
+const MIN_REFRESH_GAP_MS = 5000;
 
 export function Hub() {
   const identity = useIdentity();
@@ -36,24 +38,41 @@ function HubInner({ identity }: { identity: Identity }) {
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
 
-  const refresh = useCallback(async () => {
-    try {
-      setSheets(await api.list());
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, [api]);
+  const lastRefresh = useRef(0);
+  const refresh = useCallback(
+    async (force = true) => {
+      // Blob calls are metered: don't re-list more than once every few seconds on focus/timer.
+      if (!force && Date.now() - lastRefresh.current < MIN_REFRESH_GAP_MS) return;
+      lastRefresh.current = Date.now();
+      try {
+        setSheets(await api.list());
+        setError(null);
+      } catch (e) {
+        setError((e as Error).message);
+      }
+    },
+    [api],
+  );
 
   useEffect(() => {
     refresh();
-    const t = setInterval(refresh, REFRESH_MS);
-    window.addEventListener("focus", refresh);
+    const timer = setInterval(() => {
+      if (!document.hidden) refresh(false);
+    }, REFRESH_MS);
+    const onFocus = () => refresh(false);
+    window.addEventListener("focus", onFocus);
+    // Other players (and our own sheet windows) announce changes, so the list updates at once.
+    const off = onChanged((e) => {
+      const mine = e.from === identity.playerId;
+      if (!e.sheetId && mine) return; // our own list change: already refreshed by the dialog
+      refresh(!e.sheetId); // saves can be frequent, so rate-limit those
+    });
     return () => {
-      clearInterval(t);
-      window.removeEventListener("focus", refresh);
+      clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      off();
     };
-  }, [refresh]);
+  }, [refresh, identity.playerId]);
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -69,6 +88,7 @@ function HubInner({ identity }: { identity: Identity }) {
 
   const done = async () => {
     setDialog(null);
+    notifyChanged({ from: identity.playerId });
     await refresh();
   };
 

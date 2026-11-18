@@ -26,9 +26,16 @@ To load it inside Owlbear Rodeo, add `http://localhost:5173/manifest.json` as a 
 ## Deploy (GitHub + Vercel)
 
 1. Push this repo to GitHub and import it in Vercel (framework preset: Vite).
-2. In the Vercel project, add **Blob** storage (Storage tab) and an **Upstash Redis** database
-   (Marketplace). Both set their environment variables automatically.
-3. Deploy. Add `https://<your-project>.vercel.app/manifest.json` as the extension URL in Owlbear.
+2. In the Vercel project's **Storage** tab, create a **Blob** store with **Public** access and
+   connect it to the project (Production, plus Preview if you want). That sets
+   `BLOB_READ_WRITE_TOKEN`. It's the only storage needed.
+3. Deploy (or redeploy, since variables only reach new deployments). Add
+   `https://<your-project>.vercel.app/manifest.json` as the extension URL in Owlbear.
+
+Everything lives in Blob: the PDFs, plus a small versioned JSON record per sheet (name, owner,
+editors). Records are immutable files, so simultaneous saves can't overwrite each other. Blob API
+calls are metered on free plans, so other players are told about changes by an Owlbear broadcast
+instead of constant polling (there is only a slow 60-second safety-net refresh).
 
 ## Limits worth knowing
 

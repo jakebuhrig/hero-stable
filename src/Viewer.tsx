@@ -8,6 +8,7 @@ import { canEdit } from "../api/_lib/perms";
 import type { Sheet } from "../api/_lib/types";
 import { ApiError, fetchPdfBytes, sheetsApi, uploadPdf } from "./api";
 import type { Identity } from "./identity";
+import { notifyChanged, onChanged } from "./sync";
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -29,7 +30,7 @@ function syncFilled(root: HTMLElement) {
 }
 
 const AUTOSAVE_MS = 3000;
-const POLL_MS = 8000;
+const POLL_MS = 60000;
 
 type Status = "loading" | "ready" | "saving" | "saved" | "error";
 
@@ -236,6 +237,7 @@ export function Viewer({ sheetId, identity, onTitle, flushRef }: Props) {
         });
         loadedVersionRef.current = next.version;
         adopt(next);
+        notifyChanged({ sheetId: next.id, from: identity.playerId });
         if (editCountRef.current === editsAtStart) {
           dirtyRef.current = false;
           setDirty(false);
@@ -271,33 +273,45 @@ export function Viewer({ sheetId, identity, onTitle, flushRef }: Props) {
     return () => clearTimeout(t);
   }, [editTick, editable, newer, save]);
 
-  // Pick up changes other people make (and permission or name changes).
-  useEffect(() => {
-    const t = setInterval(async () => {
-      if (savingRef.current) return;
-      try {
-        const latest = await api.get(sheetId);
-        const current = sheetRef.current;
-        if (!current) return;
-        if (latest.version === current.version) return;
-        if (latest.version === loadedVersionRef.current) {
-          adopt(latest);
-          return;
-        }
-        if (dirtyRef.current) {
-          setNewer(latest);
-          adopt({ ...latest, fileUrl: current.fileUrl });
-        } else {
-          loadedVersionRef.current = latest.version;
-          adopt(latest);
-          setLoadKey((k) => k + 1);
-        }
-      } catch {
-        /* transient; try again next tick */
+  // Pick up changes other people make (and permission or name changes). Mostly driven by
+  // broadcasts from whoever saved; the slow timer is only a safety net.
+  const checkForUpdates = useCallback(async () => {
+    if (savingRef.current) return;
+    try {
+      const latest = await api.get(sheetId);
+      const current = sheetRef.current;
+      if (!current) return;
+      if (latest.version === current.version) return;
+      if (latest.version === loadedVersionRef.current) {
+        adopt(latest);
+        return;
       }
-    }, POLL_MS);
-    return () => clearInterval(t);
+      if (dirtyRef.current) {
+        setNewer(latest);
+        adopt({ ...latest, fileUrl: current.fileUrl });
+      } else {
+        loadedVersionRef.current = latest.version;
+        adopt(latest);
+        setLoadKey((k) => k + 1);
+      }
+    } catch {
+      /* transient; the next broadcast or timer tick retries */
+    }
   }, [api, sheetId, adopt]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (!document.hidden) checkForUpdates();
+    }, POLL_MS);
+    const off = onChanged((e) => {
+      if (e.from === identity.playerId) return; // our own save
+      if (!e.sheetId || e.sheetId === sheetId) checkForUpdates();
+    });
+    return () => {
+      clearInterval(timer);
+      off();
+    };
+  }, [checkForUpdates, sheetId, identity.playerId]);
 
   function loadTheirs() {
     if (!newer) return;

@@ -1,9 +1,16 @@
 import { canEdit, canManage } from "./perms.js";
 import type { ApiReq, ApiRes, Ctx, Editor, Sheet } from "./types.js";
 
+/** Thrown by `putSheet` when another write already created that version of the sheet. */
+export class ConflictError extends Error {}
+
 export interface Store {
   listSheets(roomId: string): Promise<Sheet[]>;
-  getSheet(id: string): Promise<Sheet | null>;
+  getSheet(roomId: string, id: string): Promise<Sheet | null>;
+  /**
+   * Save a sheet record. Each save is a new `sheet.version`; if that version already exists
+   * (someone else saved first) this throws ConflictError instead of overwriting.
+   */
   putSheet(sheet: Sheet): Promise<void>;
   deleteSheet(sheet: Sheet): Promise<void>;
   /** Remove a stored PDF. Must not throw if it is already gone. */
@@ -108,9 +115,9 @@ export function createHandlers(store: Store) {
     const id = req.query.id;
     if (!id) return fail(400, "Missing id");
 
-    const current = await store.getSheet(id);
-    // Sheets from other rooms look like they don't exist.
-    if (!current || current.roomId !== ctx.roomId) return fail(404, "Sheet not found");
+    // Sheets are stored per room, so other rooms' sheets simply don't exist here.
+    const current = await store.getSheet(ctx.roomId, id);
+    if (!current) return fail(404, "Sheet not found");
 
     if (req.method === "GET") return ok(current);
 
@@ -178,7 +185,17 @@ export function createHandlers(store: Store) {
       next.version = current.version + 1;
       next.updatedAt = Date.now();
       next.updatedBy = ctx.playerName;
-      await store.putSheet(next);
+      try {
+        await store.putSheet(next);
+      } catch (e) {
+        if (!(e instanceof ConflictError)) throw e;
+        // Lost a race with another save: drop the file we just received and report the winner.
+        if (next.fileUrl !== current.fileUrl && next.fileUrl !== current.prevFileUrl) {
+          await store.deleteFile(next.fileUrl);
+        }
+        const latest = await store.getSheet(ctx.roomId, id);
+        return fail(409, "Sheet was updated by someone else", { sheet: latest });
+      }
       for (const url of staleFiles) await store.deleteFile(url);
       return ok(next);
     }
