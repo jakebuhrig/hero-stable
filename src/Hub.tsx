@@ -4,11 +4,12 @@ import { canEdit, canManage } from "../api/_lib/perms";
 import type { Editor, Sheet } from "../api/_lib/types";
 import { fetchPdfBytes, sheetsApi, uploadPdf } from "./api";
 import { inObr, useIdentity, useOwlbearTheme, type Identity } from "./identity";
+import { Dropzone, hasFiles, isPdf } from "./Dropzone";
 import { carryOver, listFieldNames, type CarryOverResult } from "./pdfFields";
 import { getHostMode, openSheet, setHostMode, type HostMode } from "./windows";
 
 type Dialog =
-  | { kind: "upload" }
+  | { kind: "upload"; file?: File }
   | { kind: "rename"; sheet: Sheet }
   | { kind: "replace"; sheet: Sheet }
   | { kind: "permissions"; sheet: Sheet }
@@ -32,6 +33,8 @@ function HubInner({ identity }: { identity: Identity }) {
   const [query, setQuery] = useState("");
   const [menu, setMenu] = useState<string | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const dragDepth = useRef(0);
 
   const refresh = useCallback(async () => {
     try {
@@ -70,7 +73,33 @@ function HubInner({ identity }: { identity: Identity }) {
   };
 
   return (
-    <div className="hub" onClick={() => setMenu(null)}>
+    <div
+      className="hub"
+      onClick={() => setMenu(null)}
+      // Dropping a PDF anywhere on the panel starts an upload. Dialogs handle their own drops.
+      onDragEnter={(e) => {
+        if (!hasFiles(e) || dialog) return;
+        e.preventDefault();
+        dragDepth.current++;
+        setDragging(true);
+      }}
+      onDragOver={(e) => {
+        if (hasFiles(e) && !dialog) e.preventDefault();
+      }}
+      onDragLeave={() => {
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragging(false);
+      }}
+      onDrop={(e) => {
+        dragDepth.current = 0;
+        setDragging(false);
+        if (!hasFiles(e) || dialog) return;
+        e.preventDefault();
+        const file = Array.from(e.dataTransfer.files).find(isPdf);
+        if (file) setDialog({ kind: "upload", file });
+      }}
+    >
+      {dragging && <div className="drop-overlay">Drop a PDF to upload it</div>}
       <header className="hub-head">
         <h1>Hero Stable</h1>
         <button title="Settings" onClick={() => setDialog({ kind: "settings" })}>⚙</button>
@@ -128,7 +157,7 @@ function HubInner({ identity }: { identity: Identity }) {
         ))}
       </div>
 
-      {dialog?.kind === "upload" && <UploadDialog identity={identity} onClose={() => setDialog(null)} onDone={done} />}
+      {dialog?.kind === "upload" && <UploadDialog identity={identity} initialFile={dialog.file} onClose={() => setDialog(null)} onDone={done} />}
       {dialog?.kind === "rename" && <RenameDialog identity={identity} sheet={dialog.sheet} onClose={() => setDialog(null)} onDone={done} />}
       {dialog?.kind === "replace" && <ReplaceDialog identity={identity} sheet={dialog.sheet} onClose={() => setDialog(null)} onDone={done} />}
       {dialog?.kind === "permissions" && <PermissionsDialog identity={identity} sheet={dialog.sheet} onClose={() => setDialog(null)} onDone={done} />}
@@ -193,11 +222,12 @@ function useAction() {
 
 const stripPdf = (name: string) => name.replace(/\.pdf$/i, "");
 
-function UploadDialog({ identity, onClose, onDone }: { identity: Identity; onClose: () => void; onDone: () => void }) {
+function UploadDialog({ identity, initialFile, onClose, onDone }: { identity: Identity; initialFile?: File; onClose: () => void; onDone: () => void }) {
   const api = useMemo(() => sheetsApi(identity), [identity]);
   const { busy, error, run } = useAction();
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("");
+  const nameEdited = useRef(false);
   const [fields, setFields] = useState<number | null>(null);
   const [checkError, setCheckError] = useState<string | null>(null);
 
@@ -206,7 +236,7 @@ function UploadDialog({ identity, onClose, onDone }: { identity: Identity; onClo
     setFields(null);
     setCheckError(null);
     if (!f) return;
-    if (!name) setName(stripPdf(f.name));
+    if (!nameEdited.current) setName(stripPdf(f.name)); // follow the file until the user types a name
     try {
       setFields((await listFieldNames(new Uint8Array(await f.arrayBuffer()))).length);
     } catch {
@@ -214,12 +244,15 @@ function UploadDialog({ identity, onClose, onDone }: { identity: Identity; onClo
     }
   }
 
+  // A PDF dropped on the hub arrives pre-selected.
+  useEffect(() => {
+    if (initialFile) pick(initialFile);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <Dialog title="Upload a character sheet" onClose={onClose}>
-      <label className="field">
-        PDF file
-        <input type="file" accept="application/pdf" onChange={(e) => pick(e.target.files?.[0] ?? null)} />
-      </label>
+      <Dropzone file={file} onFile={pick} label="Drop a character sheet PDF here" />
       {checkError && <div className="banner error">{checkError}</div>}
       {fields === 0 && (
         <div className="banner warn">
@@ -229,7 +262,15 @@ function UploadDialog({ identity, onClose, onDone }: { identity: Identity; onClo
       {fields !== null && fields > 0 && <div className="muted small">{fields} fillable fields found.</div>}
       <label className="field">
         Sheet name
-        <input value={name} maxLength={80} onChange={(e) => setName(e.target.value)} placeholder="e.g. Thorin, level 5" />
+        <input
+          value={name}
+          maxLength={80}
+          placeholder="e.g. Thorin, level 5"
+          onChange={(e) => {
+            nameEdited.current = true;
+            setName(e.target.value);
+          }}
+        />
       </label>
       <div className="muted small">Saved under {identity.playerName}.</div>
       {error && <div className="banner error">{error}</div>}
@@ -313,10 +354,7 @@ function ReplaceDialog({ identity, sheet, onClose, onDone }: { identity: Identit
       <div className="muted small">
         The sheet keeps its name, owner and permissions. You can undo the replace afterwards.
       </div>
-      <label className="field">
-        New PDF
-        <input type="file" accept="application/pdf" onChange={(e) => pick(e.target.files?.[0] ?? null)} />
-      </label>
+      <Dropzone file={file} onFile={pick} label="Drop the new PDF here" />
       {checking && <div className="muted small">Comparing fields…</div>}
       {checkError && <div className="banner warn">{checkError} You can still replace it without copying values.</div>}
       {result && (
