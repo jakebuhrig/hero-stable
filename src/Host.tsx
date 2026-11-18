@@ -1,7 +1,9 @@
-import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { FloatingWindow, type Geom } from "./FloatingWindow";
 import { useIdentity, useOwlbearTheme } from "./identity";
-import { Viewer } from "./Viewer";
+// Loaded on demand so that if the PDF engine fails to load here, it shows up as an error in the
+// window instead of taking down the whole host page.
+const Viewer = lazy(() => import("./Viewer").then((m) => ({ default: m.Viewer })));
 import { closeHost, getHostMode, listenForOpen } from "./windows";
 import { inObr } from "./identity";
 
@@ -74,6 +76,11 @@ export function Host() {
   const identity = useIdentity();
   useOwlbearTheme();
 
+  // The app is running: drop the pre-boot "loading…" notice from host.html.
+  useEffect(() => {
+    document.getElementById("boot")?.remove();
+  }, []);
+
   const [wins, setWins] = useState<Win[]>([]);
   const zRef = useRef(10);
   const flushers = useRef(new Map<string, { current: (() => Promise<boolean>) | null }>());
@@ -142,12 +149,14 @@ export function Host() {
           onToggleMaximize={() => update(w.sheetId, { maximized: !w.maximized })}
         >
           <Boundary>
-            <Viewer
-              sheetId={w.sheetId}
-              identity={identity}
-              onTitle={(title) => update(w.sheetId, { title })}
-              flushRef={flusherFor(w.sheetId)}
-            />
+            <Suspense fallback={<div className="muted pad">Loading the PDF viewer…</div>}>
+              <Viewer
+                sheetId={w.sheetId}
+                identity={identity}
+                onTitle={(title) => update(w.sheetId, { title })}
+                flushRef={flusherFor(w.sheetId)}
+              />
+            </Suspense>
           </Boundary>
         </FloatingWindow>
       ))}
