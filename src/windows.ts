@@ -47,9 +47,12 @@ export async function openSheet(sheetId: string) {
   if (acked) return;
 
   const overlay = getHostMode() === "overlay";
+  // Absolute, so it can't be resolved against anything other than this extension's own origin.
+  const url = new URL("/host.html", location.href);
+  url.searchParams.set("open", sheetId);
   await OBR.modal.open({
     id: HOST_ID,
-    url: `/host.html?open=${encodeURIComponent(sheetId)}`,
+    url: url.href,
     fullScreen: true,
     hidePaper: true,
     hideBackdrop: overlay,

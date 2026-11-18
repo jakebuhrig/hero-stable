@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { FloatingWindow, type Geom } from "./FloatingWindow";
 import { useIdentity, useOwlbearTheme } from "./identity";
 import { Viewer } from "./Viewer";
@@ -15,17 +15,58 @@ interface Win {
 
 const geomKey = (sheetId: string) => `hs-geom:${sheetId}`;
 
+/** The iframe can report a 0×0 size for an instant while Owlbear is laying the modal out. */
+function viewport() {
+  return {
+    vw: window.innerWidth > 200 ? window.innerWidth : 1280,
+    vh: window.innerHeight > 200 ? window.innerHeight : 800,
+  };
+}
+
+const sane = (g: Geom, vw: number, vh: number) =>
+  [g.x, g.y, g.w, g.h].every(Number.isFinite) &&
+  g.w >= 320 &&
+  g.h >= 240 &&
+  g.x + g.w > 80 &&
+  g.x < vw - 80 &&
+  g.y >= 0 &&
+  g.y < vh - 32;
+
 function readGeom(sheetId: string, index: number): Geom {
+  const { vw, vh } = viewport();
   try {
     const raw = localStorage.getItem(geomKey(sheetId));
-    if (raw) return JSON.parse(raw) as Geom;
+    if (raw) {
+      const stored = JSON.parse(raw) as Geom;
+      if (sane(stored, vw, vh)) return stored;
+    }
   } catch {
     /* fall through to default */
   }
-  const w = Math.min(780, window.innerWidth - 40);
-  const h = Math.min(940, window.innerHeight - 40);
+  const w = Math.max(320, Math.min(780, vw - 40));
+  const h = Math.max(240, Math.min(940, vh - 40));
   const offset = (index % 8) * 28;
   return { x: 20 + offset, y: 20 + offset, w, h };
+}
+
+/** Shows what went wrong instead of silently rendering nothing. */
+class Boundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state = { error: null as Error | null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error) {
+    console.error("Hero Stable window crashed", error);
+  }
+  render() {
+    return this.state.error ? (
+      <div className="banner error" style={{ pointerEvents: "auto" }}>
+        Hero Stable hit an error: {this.state.error.message}
+      </div>
+    ) : (
+      this.props.children
+    );
+  }
 }
 
 /** Full-screen transparent page that hosts the floating sheet windows. */
@@ -76,7 +117,8 @@ export function Host() {
     });
   }
 
-  if (!identity) return null;
+  // Visible while waiting on Owlbear, so a stalled connection doesn't look like a blank screen.
+  if (!identity) return <div className="host-status">Hero Stable: connecting to Owlbear…</div>;
 
   return (
     <div className={`host-root ${getHostMode() === "overlay" || !inObr ? "click-through" : ""}`}>
@@ -99,12 +141,14 @@ export function Host() {
           onClose={() => close(w.sheetId)}
           onToggleMaximize={() => update(w.sheetId, { maximized: !w.maximized })}
         >
-          <Viewer
-            sheetId={w.sheetId}
-            identity={identity}
-            onTitle={(title) => update(w.sheetId, { title })}
-            flushRef={flusherFor(w.sheetId)}
-          />
+          <Boundary>
+            <Viewer
+              sheetId={w.sheetId}
+              identity={identity}
+              onTitle={(title) => update(w.sheetId, { title })}
+              flushRef={flusherFor(w.sheetId)}
+            />
+          </Boundary>
         </FloatingWindow>
       ))}
     </div>

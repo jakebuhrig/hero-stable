@@ -112,6 +112,7 @@ input:not([type="checkbox"]):not([type="radio"]) {
 .actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* ---------- floating windows ---------- */
+.host-status { position: fixed; top: 12px; left: 12px; padding: 6px 10px; border-radius: 6px; background: var(--paper); color: var(--text); border: 1px solid var(--border); pointer-events: none; }
 .host-root { position: fixed; inset: 0; }
 .host-root.click-through { pointer-events: none; }
 .fw {
