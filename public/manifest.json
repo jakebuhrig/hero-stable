@@ -1,0 +1,15 @@
+{
+  "name": "Hero Stable",
+  "version": "0.1.0",
+  "manifest_version": 1,
+  "author": "jbuhrig",
+  "description": "A stable of heroes: upload, fill in, and share PDF character sheets in your room.",
+  "icon": "/icon.svg",
+  "action": {
+    "title": "Hero Stable",
+    "icon": "/icon.svg",
+    "popover": "/index.html",
+    "width": 420,
+    "height": 580
+  }
+}
