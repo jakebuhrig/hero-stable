@@ -50,10 +50,17 @@ export async function openSheet(sheetId: string) {
   // Absolute, so it can't be resolved against anything other than this extension's own origin.
   const url = new URL("/host.html", location.href);
   url.searchParams.set("open", sheetId);
+
+  // An explicit size (rather than `fullScreen`) so the iframe can't collapse to nothing when
+  // the modal's paper is hidden. Nearly the whole board, leaving a small margin.
+  const [vw, vh] = await Promise.all([OBR.viewport.getWidth(), OBR.viewport.getHeight()]).catch(
+    () => [1280, 800],
+  );
   await OBR.modal.open({
     id: HOST_ID,
     url: url.href,
-    fullScreen: true,
+    width: Math.max(600, Math.round(vw * 0.96)),
+    height: Math.max(400, Math.round(vh * 0.94)),
     hidePaper: true,
     hideBackdrop: overlay,
     disablePointerEvents: overlay,
