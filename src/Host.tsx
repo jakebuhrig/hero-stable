@@ -71,10 +71,23 @@ class Boundary extends Component<{ children: ReactNode }, { error: Error | null 
   }
 }
 
-/** Full-screen transparent page that hosts the floating sheet windows. */
+type Layout = "tabs" | "floating";
+
+/**
+ * Inside Owlbear: tabs filling the modal (Standard) unless the user opted into Floating.
+ * In a plain browser tab (local development) floating windows are the default, and
+ * `?layout=tabs` previews the Standard layout.
+ */
+function chooseLayout(): Layout {
+  if (inObr) return getHostMode() === "floating" ? "floating" : "tabs";
+  return new URLSearchParams(location.search).get("layout") === "tabs" ? "tabs" : "floating";
+}
+
+/** The page inside Owlbear's modal: shows the open sheets as tabs or floating windows. */
 export function Host() {
   const identity = useIdentity();
   useOwlbearTheme();
+  const layout = chooseLayout();
 
   // The app is running: drop the pre-boot "loading…" notice from host.html.
   useEffect(() => {
@@ -82,6 +95,7 @@ export function Host() {
   }, []);
 
   const [wins, setWins] = useState<Win[]>([]);
+  const [active, setActive] = useState<string | null>(null);
   const zRef = useRef(10);
   const flushers = useRef(new Map<string, { current: (() => Promise<boolean>) | null }>());
 
@@ -95,6 +109,7 @@ export function Host() {
   };
 
   const open = useCallback((sheetId: string) => {
+    setActive(sheetId);
     setWins((prev) => {
       const z = ++zRef.current;
       if (prev.some((w) => w.sheetId === sheetId)) {
@@ -119,6 +134,7 @@ export function Host() {
     flushers.current.delete(sheetId);
     setWins((prev) => {
       const next = prev.filter((w) => w.sheetId !== sheetId);
+      setActive((cur) => (cur === sheetId ? (next[next.length - 1]?.sheetId ?? null) : cur));
       if (next.length === 0) closeHost();
       return next;
     });
@@ -127,8 +143,58 @@ export function Host() {
   // Visible while waiting on Owlbear, so a stalled connection doesn't look like a blank screen.
   if (!identity) return <div className="host-status">Hero Stable: connecting to Owlbear…</div>;
 
+  const viewerFor = (w: Win) => (
+    <Boundary>
+      <Suspense fallback={<div className="muted pad">Loading the PDF viewer…</div>}>
+        <Viewer
+          sheetId={w.sheetId}
+          identity={identity}
+          onTitle={(title) => update(w.sheetId, { title })}
+          flushRef={flusherFor(w.sheetId)}
+        />
+      </Suspense>
+    </Boundary>
+  );
+
+  // Standard layout: the sheet fills Owlbear's own modal, with tabs when several are open.
+  // (No window inside a window; the modal already is the window.)
+  if (layout === "tabs") {
+    return (
+      <div className="tabs-root">
+        <div className="tabbar">
+          {wins.map((w) => (
+            <div
+              key={w.sheetId}
+              className={`tab ${w.sheetId === active ? "active" : ""}`}
+              onClick={() => setActive(w.sheetId)}
+            >
+              <span className="tab-title">{w.title}</span>
+              <button
+                className="fw-btn"
+                title="Close"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  close(w.sheetId);
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="tabbody">
+          {wins.map((w) => (
+            <div key={w.sheetId} className={`pane ${w.sheetId === active ? "" : "inactive"}`}>
+              {viewerFor(w)}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`host-root ${getHostMode() === "floating" || !inObr ? "click-through" : ""}`}>
+    <div className={`host-root ${layout === "floating" ? "click-through" : ""}`}>
       {wins.map((w) => (
         <FloatingWindow
           key={w.sheetId}
@@ -148,16 +214,7 @@ export function Host() {
           onClose={() => close(w.sheetId)}
           onToggleMaximize={() => update(w.sheetId, { maximized: !w.maximized })}
         >
-          <Boundary>
-            <Suspense fallback={<div className="muted pad">Loading the PDF viewer…</div>}>
-              <Viewer
-                sheetId={w.sheetId}
-                identity={identity}
-                onTitle={(title) => update(w.sheetId, { title })}
-                flushRef={flusherFor(w.sheetId)}
-              />
-            </Suspense>
-          </Boundary>
+          {viewerFor(w)}
         </FloatingWindow>
       ))}
     </div>

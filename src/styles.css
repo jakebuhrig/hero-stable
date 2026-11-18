@@ -111,6 +111,16 @@ input:not([type="checkbox"]):not([type="radio"]) {
 .compare { display: flex; flex-direction: column; gap: 6px; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; }
 
+/* ---------- standard layout: tabs filling the modal ---------- */
+.tabs-root { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); color: var(--text); }
+.tabbar { display: flex; gap: 2px; padding: 4px 4px 0; background: var(--paper); overflow-x: auto; flex: none; }
+.tab { display: flex; align-items: center; gap: 4px; max-width: 260px; padding: 6px 4px 6px 12px; border-radius: 8px 8px 0 0; background: var(--paper); border: 1px solid var(--border); border-bottom: 0; cursor: pointer; opacity: 0.7; }
+.tab.active { background: var(--bg); opacity: 1; font-weight: 600; }
+.tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tabbody { position: relative; flex: 1; min-height: 0; }
+.pane { position: absolute; inset: 0; }
+.pane.inactive { visibility: hidden; pointer-events: none; }
+
 /* ---------- floating windows ---------- */
 .host-status { position: fixed; top: 12px; left: 12px; padding: 6px 10px; border-radius: 6px; background: var(--paper); color: var(--text); border: 1px solid var(--border); pointer-events: none; }
 .host-root { position: fixed; inset: 0; }
