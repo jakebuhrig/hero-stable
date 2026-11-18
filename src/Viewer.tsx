@@ -52,6 +52,8 @@ export function Viewer({ sheetId, identity, onTitle, flushRef }: Props) {
   const [editTick, setEditTick] = useState(0);
   const [newer, setNewer] = useState<Sheet | null>(null);
   const [loadKey, setLoadKey] = useState(0);
+  // What the loader is doing right now ("" once the first page is on screen); see the watchdog below.
+  const [stage, setStage] = useState("Loading sheet details…");
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const viewerElRef = useRef<HTMLDivElement>(null);
@@ -102,6 +104,7 @@ export function Viewer({ sheetId, identity, onTitle, flushRef }: Props) {
         if (!live) return;
         setError((e as Error).message);
         setStatus("error");
+        setStage("");
       });
     return () => {
       live = false;
@@ -117,10 +120,13 @@ export function Viewer({ sheetId, identity, onTitle, flushRef }: Props) {
 
     let cancelled = false;
     setStatus("loading");
+    setStage("Downloading the PDF…");
 
     (async () => {
       try {
         const data = await fetchPdfBytes(s.fileUrl);
+        if (cancelled) return;
+        setStage("Starting the PDF engine…");
         const task = pdfjs.getDocument({
           data,
           standardFontDataUrl: "/pdfjs/standard_fonts/",
@@ -145,6 +151,7 @@ export function Viewer({ sheetId, identity, onTitle, flushRef }: Props) {
           annotationMode: editableRef.current ? AnnotationMode.ENABLE_FORMS : AnnotationMode.ENABLE,
         });
         linkService.setViewer(viewer);
+        eventBus.on("pagerendered", () => setStage(""));
         eventBus.on("annotationlayerrendered", () => syncFilled(scroller));
         eventBus.on("pagesinit", () => {
           viewer.currentScaleValue = "page-width";
@@ -160,6 +167,7 @@ export function Viewer({ sheetId, identity, onTitle, flushRef }: Props) {
 
         // The shipped typings declare this hook as `null`; it is a callback in practice.
         (doc.annotationStorage as unknown as { onSetModified: (() => void) | null }).onSetModified = markDirty;
+        setStage("Drawing the page…");
         viewer.setDocument(doc);
         linkService.setDocument(doc);
 
@@ -173,6 +181,7 @@ export function Viewer({ sheetId, identity, onTitle, flushRef }: Props) {
         if (cancelled) return;
         setError((e as Error).message);
         setStatus("error");
+        setStage("");
       }
     })();
 
@@ -180,6 +189,16 @@ export function Viewer({ sheetId, identity, onTitle, flushRef }: Props) {
       cancelled = true;
     };
   }, [loadKey, editable, markDirty]);
+
+  // If a loading step never finishes, say which one instead of sitting on a blank page.
+  useEffect(() => {
+    if (!stage) return;
+    const t = setTimeout(
+      () => setError(`This is taking too long. It's stuck on: ${stage} (open the browser console for details).`),
+      15000,
+    );
+    return () => clearTimeout(t);
+  }, [stage]);
 
   // Re-check which fields are filled whenever the user edits one.
   useEffect(() => {
@@ -336,7 +355,8 @@ export function Viewer({ sheetId, identity, onTitle, flushRef }: Props) {
   };
 
   let statusText = "";
-  if (status === "loading") statusText = "Loading…";
+  if (stage) statusText = stage;
+  else if (status === "loading") statusText = "Loading…";
   else if (status === "saving") statusText = "Saving…";
   else if (!editable) statusText = "View only";
   else if (status === "error" && dirty) statusText = "Couldn't save";
