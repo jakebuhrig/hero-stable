@@ -96,7 +96,6 @@ export function Dropzone({ file, onFile, label = "Drop a PDF here" }: Props) {
           </>
         ) : (
           <>
-            <div className="dz-icon">⬆</div>
             <div className="dz-title">{over ? "Release to add this PDF" : label}</div>
             <div className="muted small">or click to browse</div>
           </>
