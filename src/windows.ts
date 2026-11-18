@@ -7,23 +7,23 @@ const ACK_CHANNEL = "com.herostable/ack";
 const MOCK_EVENT = "herostable-open";
 
 /**
- * "overlay": the windows host is a transparent full-screen modal that lets clicks fall
- * through to the map. "blocking": a plain full-screen modal with a backdrop. Overlay is the
- * default; blocking is the fallback if click-through doesn't behave in a given browser.
+ * "standard": a plain Owlbear modal (just a URL and a size), the same way other extensions open
+ * theirs. "floating" (experimental): a transparent modal that lets clicks fall through to the
+ * map, which needs Owlbear's hidePaper / hideBackdrop / disablePointerEvents options.
  */
-export type HostMode = "overlay" | "blocking";
+export type HostMode = "standard" | "floating";
 
 export function getHostMode(): HostMode {
   try {
-    return localStorage.getItem("hs-mode") === "blocking" ? "blocking" : "overlay";
+    return localStorage.getItem("hs-host-mode") === "floating" ? "floating" : "standard";
   } catch {
-    return "overlay";
+    return "standard";
   }
 }
 
 export function setHostMode(mode: HostMode) {
   try {
-    localStorage.setItem("hs-mode", mode);
+    localStorage.setItem("hs-host-mode", mode);
   } catch {
     /* ignore */
   }
@@ -46,13 +46,11 @@ export async function openSheet(sheetId: string) {
   off();
   if (acked) return;
 
-  const overlay = getHostMode() === "overlay";
   // Absolute, so it can't be resolved against anything other than this extension's own origin.
   const url = new URL("/host.html", location.href);
   url.searchParams.set("open", sheetId);
 
-  // An explicit size (rather than `fullScreen`) so the iframe can't collapse to nothing when
-  // the modal's paper is hidden. Nearly the whole board, leaving a small margin.
+  // An explicit size so the iframe always has room: nearly the whole board.
   const [vw, vh] = await Promise.all([OBR.viewport.getWidth(), OBR.viewport.getHeight()]).catch(
     () => [1280, 800],
   );
@@ -61,9 +59,9 @@ export async function openSheet(sheetId: string) {
     url: url.href,
     width: Math.max(600, Math.round(vw * 0.96)),
     height: Math.max(400, Math.round(vh * 0.94)),
-    hidePaper: true,
-    hideBackdrop: overlay,
-    disablePointerEvents: overlay,
+    ...(getHostMode() === "floating"
+      ? { hidePaper: true, hideBackdrop: true, disablePointerEvents: true }
+      : {}),
   });
 }
 

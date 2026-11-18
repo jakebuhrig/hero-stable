@@ -483,14 +483,14 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
     <Dialog title="Settings" onClose={onClose}>
       <div className="field">Sheet windows</div>
       <label className="check">
-        <input type="radio" checked={mode === "overlay"} onChange={() => choose("overlay")} />
-        Float over the map (you can still click the map around them)
+        <input type="radio" checked={mode === "standard"} onChange={() => choose("standard")} />
+        Standard (the map is dimmed while sheets are open)
       </label>
       <label className="check">
-        <input type="radio" checked={mode === "blocking"} onChange={() => choose("blocking")} />
-        Dim the map while sheets are open
+        <input type="radio" checked={mode === "floating"} onChange={() => choose("floating")} />
+        Floating, experimental (click the map around the windows)
       </label>
-      <div className="muted small">Use the second option if floating windows don't respond to clicks in your browser. Open sheets close when you switch.</div>
+      <div className="muted small">Floating needs Owlbear options that may not work everywhere. If sheets don't appear, switch back to Standard. Open sheets close when you switch.</div>
       <div className="actions">
         <button className="primary" onClick={onClose}>Done</button>
       </div>

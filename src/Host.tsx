@@ -128,7 +128,7 @@ export function Host() {
   if (!identity) return <div className="host-status">Hero Stable: connecting to Owlbear…</div>;
 
   return (
-    <div className={`host-root ${getHostMode() === "overlay" || !inObr ? "click-through" : ""}`}>
+    <div className={`host-root ${getHostMode() === "floating" || !inObr ? "click-through" : ""}`}>
       {wins.map((w) => (
         <FloatingWindow
           key={w.sheetId}
