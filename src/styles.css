@@ -24,6 +24,16 @@ body {
 }
 body.host { background: transparent; }
 
+/*
+ * An iframe whose page declares a color-scheme different from its embedder gets an opaque
+ * canvas, which would black out the map behind the windows host. So the host page declares
+ * none; each window sets its own scheme instead (this doesn't affect the page canvas).
+ */
+html.host-page { color-scheme: normal; background: transparent; }
+html.host-page body { background: transparent; }
+.fw { color-scheme: dark; }
+:root[data-mode="light"] .fw { color-scheme: light; }
+
 button, input:not([type="checkbox"]):not([type="radio"]) {
   font: inherit;
   color: inherit;
